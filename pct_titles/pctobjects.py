@@ -236,11 +236,11 @@ class TitleBase(object):
         self.parent_id = None
         self.prop_ids = [0x01, 0x04, 0x03, 0x42]
 
-        # 0,0--------|865,0
+        # 0,0--------|
         # |          |
         # |          |
         # |          |
-        # 0,485------865,485
+        # ----------865,485
 
         # top_y, left_x, bottom_y, right_x
 
@@ -319,6 +319,8 @@ class TitleBase(object):
 
         name = desc[0]
         if name.startswith("?"):
+            value = unpack(pack_format, raw_data)
+            # print "??", self.__class__.__name__, "0x%02X" %code,  value
             return
 
         if not hasattr(self, name):
@@ -426,7 +428,7 @@ class TitleElement(TitleBase):
         self.fill_alpha = 0
         self.border_alpha = 0
         self.shadow_alpha = 0
-        self.line_width = 0
+        self.border_width = 0
         self.shadow_mode = 2
         self.shadow_depth = 0
         self.shadow_blur = 0
@@ -464,24 +466,24 @@ class TitleElement(TitleBase):
         write_color_prop(f, p, self.shadow_color)
         i+=1
 
-        # fill_alpha
+        # fill_alpha 0x08
         p = prop_ids[i]
         write_uint16_prop(f, p, self.fill_alpha)
         i+=1
 
-        # border_alpha
+        # border_alpha 0x09
         p = prop_ids[i]
         write_uint16_prop(f, p, self.border_alpha)
         i+=1
 
-        # shadow_alpha
+        # shadow_alpha 0x0A
         p = prop_ids[i]
         write_uint16_prop(f, p, self.shadow_alpha)
         i+=1
 
-        # line_width
+        # stroke_width 0x3F
         p = prop_ids[i]
-        write_uint16_prop(f, p, self.line_width)
+        write_uint16_prop(f, p, self.border_width)
         i+=1
 
         # shadow_mode
@@ -580,10 +582,6 @@ class TextFormat(object):
         self.prop4 = 0
         self.prop5 = 0
         self.prop6 = 0
-        self.styles =  {0x00:None,
-                        0x0100:"bold",
-                        0x0200:'italic',
-                        0x0300:'bold italic'}
 
     def write(self, f):
         write_uint16(f, self.prop0)
@@ -614,7 +612,7 @@ class TitleText(TitleElement):
         super(TitleText , self).__init__()
         self.prop_ids += [0x3B, 0x24, 0x25, 0x40, 0x41]
         self.text = text
-        self.text_formating = [TextFormat()]
+        self.text_formating = None
         self.justify = 0
         self.global_kerning = 1000
         self.leading = 0
@@ -623,6 +621,10 @@ class TitleText(TitleElement):
                               0x0001:"center",
                               0xFFFE: "left",
                               0xFFFF: "right" }
+        self.styles =  {0x00:None,
+                        0x0100:"bold",
+                        0x0200:'italic',
+                        0x0300:'bold italic'}
 
     def write_props(self, f):
         super(TitleText , self).write_props(f)
@@ -704,6 +706,8 @@ class TitleText(TitleElement):
         for i in range(array_count):
             tf = TextFormat()
             tf.read(StringIO(f.read(20)))
+            if not self.text_formating:
+                self.text_formating = []
             self.text_formating.append(tf)
 
         assert len(f.read()) == 0
@@ -742,7 +746,7 @@ class TitleLine(TitleElement):
     def __init__(self):
         super(TitleLine , self).__init__()
         self.prop_ids += [0x0F, 0x0B, 0x10, 0x11]
-        self.prop1 = 2
+        self.line_width = 1
         self.arrow_type = 0
         self.arrow_desc = (16400, 0, 0, 0, 16384, 0, 0, 0)
 
@@ -758,9 +762,9 @@ class TitleLine(TitleElement):
             write_int16(f, self.bbox[x])
         i+=1
 
-        # 0x0B ?? prop1
+        # 0x0B line_width
         p = prop_ids[i]
-        write_uint16_prop(f, p, self.prop1)
+        write_uint16_prop(f, p, self.line_width)
         i+=1
 
         # 0x10 arrow_type
