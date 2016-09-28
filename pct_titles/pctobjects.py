@@ -314,13 +314,13 @@ class TitleBase(object):
         desc = codes.title_codes[code]
         pack_format = desc[1]
         if pack_format == -1:
-            print "varable code 0x%02X" % code
+            # print "varable code 0x%02X" % code
             return
 
         name = desc[0]
         if name.startswith("?"):
             value = unpack(pack_format, raw_data)
-            # print "??", self.__class__.__name__, "0x%02X" %code,  value
+            # print name, self.__class__.__name__, "0x%02X" %code,  value
             return
 
         if not hasattr(self, name):
@@ -612,7 +612,7 @@ class TitleText(TitleElement):
         super(TitleText , self).__init__()
         self.prop_ids += [0x3B, 0x24, 0x25, 0x40, 0x41]
         self.text = text
-        self.text_formating = None
+        self.text_formating = []
         self.justify = 0
         self.global_kerning = 1000
         self.leading = 0
@@ -673,8 +673,14 @@ class TitleText(TitleElement):
 
         data_size_pos = f.tell()
         write_uint16(f, 0)
-        write_uint16(f, len(self.text_formating))
-        for item in self.text_formating:
+
+        text_formating = self.text_formating
+        if not text_formating:
+            text_formating = [TextFormat()]
+
+
+        write_uint16(f, len(text_formating))
+        for item in text_formating:
             item.write(f)
 
         update_size(f, data_size_pos)
