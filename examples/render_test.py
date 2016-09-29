@@ -134,7 +134,7 @@ def render_item(pct, img, item ,out_dir):
 def render_pct(src, dst):
     pct = pct_titles.PctFile()
     pct.read(src)
-    size = "860x486" # this seems to be the base resolution
+    size = "865x485" # this seems to be the base resolution
 
     img = cythonmagick.Image(size=size, color="grey")
     #convert -list font
@@ -151,12 +151,8 @@ def render_pct(src, dst):
         data = StringIO(img.tostring())
         f = open(dst, 'wb')
         pct.embed(data, f)
-
     else:
         img.write(dst)
-
-
-
 
 if __name__ == "__main__":
 

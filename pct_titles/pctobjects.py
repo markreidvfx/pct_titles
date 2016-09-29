@@ -8,6 +8,14 @@ def update_size(f, pos):
     write_uint16(f, cur - pos - 2)
     f.seek(cur)
 
+def update_size_aaf(f, pos):
+    cur = f.tell()
+    f.seek(pos)
+    size = cur - pos
+    # aaf put a little endian data size at the beginning for some reason
+    f.write(pack('<H', size))
+    f.seek(cur)
+
 def write_byte(f, value):
     f.write(pack('>B', value))
 
@@ -154,6 +162,8 @@ def read_title_comment(f, length):
     # this has a null for some reason
     elif type_name == "TitleRectangle\x00":
         obj = TitleRectangle()
+    else:
+        raise Exception("unknown title type: %s" % type_name)
 
     assert read_byte(f) == 0 #always 0
     assert read_uint16(f) == 0 #always 0
@@ -197,6 +207,7 @@ class PctFile(object):
         self.title_page = TitlePage()
         self.width = 16
         self.height = 16
+        self.aaf_mode = False
 
     def add_element(self, element):
         self.elements.append(element)
@@ -208,14 +219,20 @@ class PctFile(object):
         else:
             f = open(dst_file, 'wb')
 
-        for i in xrange(512):
-            write_byte(f, 0)
+        # embed aaf doesn't have header padding
+        if not self.aaf_mode:
+            for i in xrange(512):
+                write_byte(f, 0)
 
         data_size_pos = self.write_header(f)
         self.write_comment_tags(f)
         write_byte(f, 0)
         write_byte(f, 0xFF)
-        update_size(f, data_size_pos)
+
+        if self.aaf_mode:
+            update_size_aaf(f, data_size_pos)
+        else:
+            update_size(f, data_size_pos)
 
     def read(self, src_file):
         # looks like a file object
@@ -253,8 +270,16 @@ class PctFile(object):
 
         write_uint16(f, 0x0000)
         write_uint16(f, 0x0000)
-        write_uint16(f, self.height)
-        write_uint16(f, self.width)
+
+        width = self.width
+        height = self.height
+
+        if self.aaf_mode:
+            width = 16
+            height = 16
+
+        write_uint16(f, height)
+        write_uint16(f, width)
 
         write_byte(f, 0)
         write_byte(f, 0x11)
@@ -271,8 +296,8 @@ class PctFile(object):
 
         write_uint16(f, 0x0000)
         write_uint16(f, 0x0000)
-        write_uint16(f, self.height)
-        write_uint16(f, self.width)
+        write_uint16(f, height)
+        write_uint16(f, width)
         write_uint16(f, 0x0000)
         write_uint16(f, 0x0000)
 
@@ -578,8 +603,8 @@ class TitleElement(TitleBase):
         p = prop_ids[i]
         write_uint16(f, p)
         write_uint16(f, 4)
-        write_uint16(f, self.shadow_dir[0])
-        write_uint16(f, self.shadow_dir[1])
+        write_int16(f, self.shadow_dir[0])
+        write_int16(f, self.shadow_dir[1])
         i+=1
 
         # ?? 0x2A
@@ -720,7 +745,7 @@ class TitleText(TitleElement):
 
         # 0x25 global_kerning
         p = prop_ids[i]
-        write_uint16_prop(f, p, self.global_kerning)
+        write_int16_prop(f, p, self.global_kerning)
         i+=1
 
         # 0x40 leading
@@ -856,4 +881,4 @@ class TitleLine(TitleElement):
         write_uint16(f, p)
         write_uint16(f, 16)
         for x in range(8):
-            write_uint16(f, self.arrow_desc[x])
+            write_int16(f, self.arrow_desc[x])
