@@ -33,6 +33,11 @@ def write_uint16_prop(f, prop_id, value):
     write_uint16(f, 2)
     write_uint16(f, value)
 
+def write_int16_prop(f, prop_id, value):
+    write_uint16(f, prop_id)
+    write_uint16(f, 2)
+    write_int16(f, value)
+
 def read_uint16(f):
     return unpack('>H', f.read(2))[0]
 
@@ -56,7 +61,8 @@ def read_pct_file(f, pct_file=None):
     image_rect = []
     for i in xrange(4):
         image_rect.append(read_int16(f))
-
+    pct_file.width  = image_rect[3]
+    pct_file.height = image_rect[2]
     c = 0
     while c == 0:
         c = read_byte(f)
@@ -85,10 +91,11 @@ def read_pct_file(f, pct_file=None):
                 return
             code = unpack(">H", d)[0]
 
+
         if code > 0x00A1:
             continue
-
-        elif code == 0x00A1:
+        # print "code 0x%04X" % code
+        if code == 0x00A1:
 
             comment_type = read_uint16(f)
             size = read_uint16(f)
@@ -105,8 +112,11 @@ def read_pct_file(f, pct_file=None):
 
         elif code in codes.pict_codes:
             pict_code =  codes.pict_codes[code]
-            # print pict_code
+            # print pict_code, pict_code[1]
             # skip ahead on known sizes
+            if pict_code[1] == -1:
+                print "-1", read_uint16(f)
+
             if pict_code[1] > 0:
                 f.read(pict_code[1])
 
@@ -171,6 +181,8 @@ class PctFile(object):
     def __init__(self):
         self.elements = []
         self.title_page = TitlePage()
+        self.width = 16
+        self.height = 16
 
     def add_element(self, element):
         self.elements.append(element)
@@ -191,17 +203,32 @@ class PctFile(object):
         data_size_pos = f.tell()
         write_uint16(f, 0)
 
-        for x in [0, 0, 16, 16]:
-            write_int16(f, x)
+        write_uint16(f, 0x0000)
+        write_uint16(f, 0x0000)
+        write_uint16(f, self.height)
+        write_uint16(f, self.width)
 
         write_byte(f, 0)
         write_byte(f, 0x11)
-        write_byte(f, 0x02)
-        #write simple header
-        f.write("FF0C00FFFE00000048000000480000000000000010001000000000".decode("hex"))
+        write_byte(f, 0x02) # version
+        write_byte(f, 0xFF)
+        write_uint16(f, 0x0C00) # info op
+        write_uint16(f, 0xFFFE)
+        write_uint16(f, 0x0000)
 
-        # write 0x0065 avid tag
-        f.write("00A10065000E41564944000131204D4143204D43".decode("hex"))
+        write_uint16(f, 0x0048) # 72 dpI
+        write_uint16(f, 0x0000)
+        write_uint16(f, 0x0048) # 72 dpI
+        write_uint16(f, 0x0000)
+
+        write_uint16(f, 0x0000)
+        write_uint16(f, 0x0000)
+        write_uint16(f, self.height)
+        write_uint16(f, self.width)
+        write_uint16(f, 0x0000)
+        write_uint16(f, 0x0000)
+
+        self.write_desc_commnet(f)
 
         self.write_comment(f, self.title_page)
         for i, item in enumerate(self.elements):
@@ -212,6 +239,10 @@ class PctFile(object):
         write_byte(f, 0)
         write_byte(f, 0xFF)
         update_size(f, data_size_pos)
+
+    def write_desc_commnet(self, f):
+        # write 0x0065 avid tag
+        f.write("00A10065000E41564944000131204D4143204D43".decode("hex"))
 
     def write_comment(self, f, obj):
         # comment
@@ -240,11 +271,11 @@ class TitleBase(object):
         # |          |
         # |          |
         # |          |
-        # ----------865,485
+        # ----------485, 865
 
         # top_y, left_x, bottom_y, right_x
 
-        self.bbox = [63, 123, 374, 548]
+        self.bbox = [0, 0, 485, 865]
         self.lock = False
 
     def read_value(self, prop_id, value):
@@ -320,7 +351,7 @@ class TitleBase(object):
         name = desc[0]
         if name.startswith("?"):
             value = unpack(pack_format, raw_data)
-            # print name, self.__class__.__name__, "0x%02X" %code,  value
+            # print '??', self.__class__.__name__, name, "0x%02X" % code,  value
             return
 
         if not hasattr(self, name):
@@ -331,7 +362,7 @@ class TitleBase(object):
         if len(value) == 1:
             value = value[0]
 
-        # print name, value
+        # print self.__class__.__name__, name, "0x%02X" % code,  value
         setattr(self, name, value)
 
 
@@ -359,7 +390,7 @@ class TitlePage(TitleBase):
         write_uint16(f, p)
         write_uint16(f, 6)
         for x in range(3):
-            write_uint16(f, self.bbox[x])
+            write_int16(f, self.bbox[x])
         i+=1
 
         # video bg 0x26
@@ -652,7 +683,7 @@ class TitleText(TitleElement):
 
         # 0x40 leading
         p = prop_ids[i]
-        write_uint16_prop(f, p, self.leading)
+        write_int16_prop(f, p, self.leading)
         i+=1
 
         # 0x41 kerning

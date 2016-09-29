@@ -1,23 +1,43 @@
 import pct_titles
-
+import os
 pct = pct_titles.PctFile()
+
 text = pct_titles.TitleText("text in the center")
 
-print text.bbox
+width = 865
+height = 485
 
-width = 860
-height = 480
+# min_y, min_x , max_y, max_x
+text.bbox = (107, 217, 379, 647)
+text.fill_color = [65535, 0, 0] # red
+text.justify = 0x0001
 
-text.bbox = [0, 0, 512, 512]
+text_format = pct_titles.TextFormat()
+text_format.font_size = 48 * 2
+text.text_formating.append(text_format)
 
 rect = pct_titles.TitleRectangle()
-line = pct_titles.TitleLine()
-oval = pct_titles.TitleOval()
+rect.fill_color = [0, 65535, 0]
 
-pct.add_element(text)
-pct.add_element(line)
+edge = 10
+rect.bbox = [edge, edge, height - edge, width - edge]
+
+oval = pct_titles.TitleOval()
+oval.fill_color = [0, 0, 65535]
+
+line = pct_titles.TitleLine()
+line.line_width = 10
+
+line2 = pct_titles.TitleLine()
+line2.line_width = 10
+line2.bbox = [height, 0, 0, width]
+
 pct.add_element(rect)
 pct.add_element(oval)
-pct.write("test.pct")
+pct.add_element(line)
+pct.add_element(line2)
+pct.add_element(text)
+
+pct.write(os.path.join(os.path.dirname(__file__),"write_test.pct"))
 
 pct.dump()

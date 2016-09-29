@@ -1,1 +1,1 @@
-from pctobjects import PctFile, TitlePage, TitleText, TitleRectangle, TitleOval, TitleLine
+from pctobjects import PctFile, TitlePage, TitleText, TitleRectangle, TitleOval, TitleLine, TextFormat
