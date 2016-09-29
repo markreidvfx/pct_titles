@@ -1,9 +1,7 @@
 import pct_titles
-import sys
 import os
-import subprocess
-import cgi
 import cythonmagick
+from StringIO import StringIO
 
 def escape(s):
     s = s.replace("&", "\&amp;")
@@ -24,7 +22,7 @@ def convert_color(c, alpha):
 
     return c
 
-def render_item(pct, img, item):
+def render_item(pct, img, item ,out_dir):
     bbox = item.bbox
     img.fill_color = 'white'
     img.stroke_color = 'white'
@@ -44,12 +42,13 @@ def render_item(pct, img, item):
     origin_x = min_x + rad_x
     origin_y = min_y + rad_y
 
-    fill_color =  convert_color(item.fill_color, item.fill_alpha)
+    fill_color   = convert_color(item.fill_color, item.fill_alpha)
     stroke_color = convert_color(item.border_color, item.border_alpha)
     shadow_color = convert_color(item.shadow_color, item.shadow_alpha)
 
-    img.fill_color =fill_color
+    img.fill_color = fill_color
     img.stroke_width = item.border_width
+    img.stroke_color = stroke_color
 
     if item.border_width:
         img.stroke_color = stroke_color
@@ -76,100 +75,88 @@ def render_item(pct, img, item):
 
     elif isinstance(item, pct_titles.TitleText):
 
-        text = item.text
-
         font_size = item.text_formating[0].font_size
         font_id = item.text_formating[0].font_id
 
         font_style_id = item.text_formating[0].style
-        font = pct.title_page.fonts[font_id]
-
-        caption_size = "%dx%d" % (width, 0) # zero for auto height
-        caption = cythonmagick.Image(size=caption_size)
-        fill_color = convert_color(item.fill_color, item.fill_alpha)
-
-        caption.background = 'none'
-        caption.background = 'none'
-        caption.fill_color = fill_color
-
-        caption.font = font
-        caption.density = "72x72"
-
-        text = escape(text)
-
-        PANGO_SCALE=1024
-
-        weight = 'normal'
-        if font_style_id in (0x0100, 0x0300):
-            weight = 'bold'
+        font = pct.title_page.fonts[font_id].replace(" ", '-')
 
         style = 'normal'
         if font_style_id in (0x0200, 0x0300):
             style = 'italic'
 
-        template = "<span weight='{weight}' style='{style}' font_desc='{font}' foreground='{color}' size='{font_size}'>{text}</span>"
+        caption_size = "%dx%d" % (width, 0) # zero for auto height
+        caption = cythonmagick.Image(size=caption_size)
 
-        markup = template.format(
-            font_size=int(font_size*PANGO_SCALE),
-            font=font,
-            text=text,
-            weight=weight,
-            style=style,
-            color=fill_color
-        )
+        caption.font = font
+        caption.density = "72x72"
+        caption.font_point_size = font_size
 
-        # could also use caption: but pango is a little better
-        caption.read('pango:{markup}'.format(markup=markup))
+        caption.background = 'none'
+        caption.fill_color = fill_color
+        caption.stroke_width = item.border_width
+        caption.stroke_color = stroke_color
+        caption.font_style = style
+
+        # bold
+        if font_style_id in (0x0100, 0x0300):
+            caption.font_weight = 1
+        else:
+            caption.font_weight = 0
+
+        text = item.text
+        caption.read("caption:{text}".format(text=text))
 
         grow = 200
         original_size = caption.size()
         caption.extent("%dx%d!" % (width+grow, height+grow), 'center')
-        stroke_size = item.border_width
 
         offset_x = min_x - (caption.size().width - original_size.width) / 2
         offset_y = min_y - (caption.size().height - original_size.height) / 2
         position = cythonmagick.Geometry(0, 0, offset_x, offset_y)
 
-        if stroke_size:
-            alpha = caption.channel("alpha")
-            alpha.morphology("Erode", "Octagon", stroke_size * 0.75)
-            alpha.negate()
-            alpha.alpha_channel("copy")
-            outline = cythonmagick.Image(size=alpha.size(), color=stroke_color)
-            outline.composite(alpha, compose = "dstin")
-
-            outline.composite(caption, "over")
-            caption = outline
-
         if item.shadow_depth or item.shadow_blur:
             alpha = caption.channel("alpha")
-            alpha.alpha_channel("activate")
+            alpha.negate()
+            # alpha.write(os.path.join(out_dir, "alpha.png"))
             shadow = cythonmagick.Image(size=alpha.size(), color=shadow_color)
-            shadow.composite(alpha, compose = "dstin")
+            shadow.composite(alpha, compose = "copyopacity")
+
             if item.shadow_blur:
                 shadow.blur(1, item.shadow_blur)
 
             shadow_pos = cythonmagick.Geometry(0, 0, offset_x + item.shadow_dir[1], offset_y + item.shadow_dir[0])
-            img.composite(shadow, "over", shadow_pos)
+            shadow.artifacts["compose:args"] = "%d" % (100-item.shadow_alpha)
+            img.composite(shadow, "dissolve", shadow_pos)
 
         img.composite(caption, "over", position,)
-
-
 
 def render_pct(src, dst):
     pct = pct_titles.PctFile()
     pct.read(src)
-
     size = "860x486" # this seems to be the base resolution
 
-    img = cythonmagick.Image(size=size, color="none")
+    img = cythonmagick.Image(size=size, color="grey")
     #convert -list font
 
     for i, item in enumerate(pct.elements):
-        render_item(pct, img, item)
+        render_item(pct, img, item, os.path.dirname(dst))
 
     img.resize("720x486!")
-    img.write(dst)
+
+
+    name, ext =  os.path.splitext(dst)
+    if ext and ext.lower() in (".pict", '.pct',):
+        img.magick = 'pict'
+        data = StringIO(img.tostring())
+        f = open(dst, 'wb')
+        pct.embed(data, f)
+
+    else:
+        img.write(dst)
+
+
+
 
 if __name__ == "__main__":
 

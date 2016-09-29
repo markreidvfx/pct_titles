@@ -47,22 +47,22 @@ def read_int16(f):
 def read_uint32(f):
     return unpack('>I', f.read(4))[0]
 
-def read_pct_file(f, pct_file=None):
-    if not pct_file:
-        pct_file = PctFile()
-
-    header_ole = unpack(">BBBB", f.read(4))
-    # skip header : 512 for standard PICT and 4, ie "PICT" for OLE2
-
-    if not header_ole == (0x50, 0x49, 0x43,0x54):
-        f.read(508)
+def read_pict_header(f, pct_file):
 
     data_size = read_uint16(f)
+    data_size_pos = f.tell()
+    if not data_size:
+        f.read(510)
+        data_size = read_uint16(f)
+        data_size_pos = f.tell()
+
     image_rect = []
     for i in xrange(4):
         image_rect.append(read_int16(f))
+
     pct_file.width  = image_rect[3]
     pct_file.height = image_rect[2]
+
     c = 0
     while c == 0:
         c = read_byte(f)
@@ -70,15 +70,28 @@ def read_pct_file(f, pct_file=None):
     if c != 0x11:
         raise Exception()
 
-    version = read_byte(f)
-    if version != 2:
+    version = read_uint16(f)
+
+    if version != 0x02FF:
         raise Exception()
 
-    c = read_byte(f)
-    if c != 0xff:
+    pict_info_op = read_uint16(f)
+
+    if pict_info_op != 0x0C00:
         raise Exception()
 
-    elements = []
+    for x in range(12):
+        v = read_uint16(f)
+        # print "0x%04X" % read_uint16(f)
+
+    return data_size_pos
+
+def read_pct_file(f, pct_file=None):
+    if not pct_file:
+        pct_file = PctFile()
+
+    read_pict_header(f, pct_file)
+
     while True:
 
         if f.tell() % 2 != 0:
@@ -115,7 +128,8 @@ def read_pct_file(f, pct_file=None):
             # print pict_code, pict_code[1]
             # skip ahead on known sizes
             if pict_code[1] == -1:
-                print "-1", read_uint16(f)
+                pass
+                # print "-1", read_uint16(f)
 
             if pict_code[1] > 0:
                 f.read(pict_code[1])
@@ -187,19 +201,53 @@ class PctFile(object):
     def add_element(self, element):
         self.elements.append(element)
 
-    def write(self, path):
-        f = open(path, 'wb')
-        self.write_header(f)
-
-    def read(self, path):
-        f = open(path, 'rb')
-        read_pct_file(f, self)
-
-    def write_header(self, f):
+    def write(self, dst_file):
+        # looks like a file object
+        if hasattr(dst_file, 'read') and hasattr(dst_file, 'tell') and hasattr(dst_file, 'seek'):
+            f = dst_file
+        else:
+            f = open(dst_file, 'wb')
 
         for i in xrange(512):
             write_byte(f, 0)
 
+        data_size_pos = self.write_header(f)
+        self.write_comment_tags(f)
+        write_byte(f, 0)
+        write_byte(f, 0xFF)
+        update_size(f, data_size_pos)
+
+    def read(self, src_file):
+        # looks like a file object
+        if hasattr(src_file, 'read') and hasattr(src_file, 'tell'):
+            f = src_file
+        else:
+            f = open(src_file, 'rb')
+
+        read_pct_file(f, self)
+
+    def embed(self, src_file, dst_file):
+        """
+        embed titles in a existing pict file
+        """
+        tmp = PctFile()
+
+        pos = src_file.tell()
+        data_size_pos = read_pict_header(src_file, tmp)
+        header_size = src_file.tell() - pos
+        src_file.seek(pos)
+        if header_size > 512:
+            dst_file.write(src_file.read(header_size))
+
+        self.write_comment_tags(dst_file)
+
+        while True:
+            data = src_file.read(1024)
+            if not data:
+                break
+            dst_file.write(data)
+
+    def write_header(self, f):
         data_size_pos = f.tell()
         write_uint16(f, 0)
 
@@ -228,6 +276,9 @@ class PctFile(object):
         write_uint16(f, 0x0000)
         write_uint16(f, 0x0000)
 
+        return data_size_pos
+
+    def write_comment_tags(self, f):
         self.write_desc_commnet(f)
 
         self.write_comment(f, self.title_page)
@@ -235,10 +286,6 @@ class PctFile(object):
             item.parent_id = self.title_page.layer_id
             item.layer_id = i + 9
             self.write_comment(f, item)
-
-        write_byte(f, 0)
-        write_byte(f, 0xFF)
-        update_size(f, data_size_pos)
 
     def write_desc_commnet(self, f):
         # write 0x0065 avid tag
@@ -258,8 +305,6 @@ class PctFile(object):
 
         update_size(f, data_size_pos)
 
-    def dump(self):
-        self.title_page.dump()
 
 class TitleBase(object):
     def __init__(self):
@@ -365,9 +410,6 @@ class TitleBase(object):
         # print self.__class__.__name__, name, "0x%02X" % code,  value
         setattr(self, name, value)
 
-
-    def dump(self):
-        print self.__class__.__name__
 
 class TitlePage(TitleBase):
     def __init__(self):
