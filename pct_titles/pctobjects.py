@@ -1,6 +1,14 @@
+from __future__ import (
+    unicode_literals,
+    absolute_import,
+    print_function,
+    division,
+    )
+
 from struct import pack, unpack
-from StringIO import StringIO
-import codes
+import io
+from io import BytesIO
+from . import codes
 
 def update_size(f, pos):
     cur = f.tell()
@@ -13,22 +21,22 @@ def update_size_aaf(f, pos):
     f.seek(pos)
     size = cur - pos
     # aaf put a little endian data size at the beginning for some reason
-    f.write(pack('<H', size))
+    f.write(pack(b'<H', size))
     f.seek(cur)
 
 def write_byte(f, value):
-    f.write(pack('>B', value))
+    f.write(pack(b'>B', value))
 
 def read_byte(f):
-    return unpack(">B", f.read(1))[0]
+    return unpack(b">B", f.read(1))[0]
 
 def write_uint16(f, value):
-    f.write(pack('>H', value))
+    f.write(pack(b'>H', value))
 def write_int16(f, value):
-    f.write(pack('>h', value))
+    f.write(pack(b'>h', value))
 
 def write_uint32(f, value):
-    f.write(pack('>I', value))
+    f.write(pack(b'>I', value))
 
 def write_color_prop(f, prop_id, color):
     write_uint16(f, prop_id)
@@ -47,7 +55,7 @@ def write_int16_prop(f, prop_id, value):
     write_int16(f, value)
 
 def read_uint16(f):
-    return unpack('>H', f.read(2))[0]
+    return unpack(b'>H', f.read(2))[0]
 
 def read_int16(f):
     return unpack('>h', f.read(2))[0]
@@ -110,7 +118,7 @@ def read_pct_file(f, pct_file=None):
                 return
             if len(d) == 0:
                 return
-            code = unpack(">H", d)[0]
+            code = unpack(b">H", d)[0]
 
 
         if code > 0x00A1:
@@ -146,21 +154,21 @@ def read_pct_file(f, pct_file=None):
 
 def read_title_comment(f, length):
     start = f.tell()
-    assert f.read(4) == "AVID"
+    assert f.read(4) == b"AVID"
     assert read_uint16(f) == 1
 
     type_name_size = read_uint16(f)
     type_name = f.read(type_name_size)
-    if type_name == "TitlePage":
+    if type_name == b"TitlePage":
         obj = TitlePage()
-    elif type_name == "TitleText":
+    elif type_name == b"TitleText":
         obj = TitleText()
-    elif type_name == "TitleLine":
+    elif type_name == b"TitleLine":
         obj = TitleLine()
-    elif type_name == "TitleOval":
+    elif type_name == b"TitleOval":
         obj = TitleOval()
     # this has a null for some reason
-    elif type_name == "TitleRectangle\x00":
+    elif type_name == b"TitleRectangle\x00":
         obj = TitleRectangle()
     else:
         raise Exception("unknown title type: %s" % type_name)
@@ -189,7 +197,7 @@ def read_title_property(f, obj):
     if not code:
         return False
 
-    code = read_uint16(StringIO(code))
+    code = read_uint16(BytesIO(code))
     # print '0x%2X' % code
     size = read_uint16(f)
     data = f.read(size)
@@ -217,7 +225,7 @@ class PctFile(object):
         if hasattr(dst_file, 'read') and hasattr(dst_file, 'tell') and hasattr(dst_file, 'seek'):
             f = dst_file
         else:
-            f = open(dst_file, 'wb')
+            f = io.open(dst_file, 'wb')
 
         # embed aaf doesn't have header padding
         if not self.aaf_mode:
@@ -239,7 +247,7 @@ class PctFile(object):
         if hasattr(src_file, 'read') and hasattr(src_file, 'tell'):
             f = src_file
         else:
-            f = open(src_file, 'rb')
+            f = io.open(src_file, 'rb')
 
         read_pct_file(f, self)
 
@@ -354,7 +362,7 @@ class TitleBase(object):
 
     def write(self, f):
 
-        f.write("AVID")
+        f.write(b"AVID")
         write_uint16(f, 0x01)
 
         #name size
@@ -364,7 +372,7 @@ class TitleBase(object):
         f.write(name)
 
         # TitleRectangle has a extra null byte at end
-        if name in ('TitleRectangle',):
+        if name in (b'TitleRectangle',):
             write_byte(f, 0)
         update_size(f, data_size_pos)
 
@@ -419,7 +427,7 @@ class TitleBase(object):
             return
 
         name = desc[0]
-        if name.startswith("?"):
+        if name.startswith(b"?"):
             value = unpack(pack_format, raw_data)
             # print '??', self.__class__.__name__, name, "0x%02X" % code,  value
             return
@@ -441,7 +449,7 @@ class TitlePage(TitleBase):
         super(TitlePage , self).__init__()
         self.prop_ids += [0x27, 0x26, 0x3C]
         self.fonts = {}
-        self.fonts[0x0003] = "Geneva"
+        self.fonts[0x0003] = b"Geneva"
         self.layer_id = 7
         self.parent_id = 0
         self.bg_color = (0,0,0)
@@ -484,7 +492,7 @@ class TitlePage(TitleBase):
 
     def write_font(self, f, font_id, font_name):
         buf = bytearray(260)
-        font = StringIO(buf)
+        font = BytesIO(buf)
 
         write_byte(font, len(font_name))
         font.write(font_name)
@@ -493,14 +501,14 @@ class TitlePage(TitleBase):
         f.write(font.getvalue())
 
     def read_font_list(self, raw_data):
-        f = StringIO(raw_data)
+        f = BytesIO(raw_data)
 
         size = read_uint16(f)
         array_count = read_uint16(f)
 
         for i in range(array_count):
             font_data = f.read(260)
-            font_reader = StringIO(font_data)
+            font_reader = BytesIO(font_data)
             font_name_size = read_byte(font_reader)
             font_name = font_reader.read(font_name_size)
             font_reader.seek(260-2)
@@ -796,7 +804,7 @@ class TitleText(TitleElement):
             write_byte(f, 0)
 
     def read_text_data(self, data):
-        f = StringIO(data)
+        f = BytesIO(data)
         text_size = read_uint16(f)
         self.text = f.read(text_size)
 
@@ -809,7 +817,7 @@ class TitleText(TitleElement):
 
         for i in range(array_count):
             tf = TextFormat()
-            tf.read(StringIO(f.read(20)))
+            tf.read(BytesIO(f.read(20)))
             if not self.text_formating:
                 self.text_formating = []
             self.text_formating.append(tf)
@@ -817,11 +825,11 @@ class TitleText(TitleElement):
         assert len(f.read()) == 0
 
     def read_kerning_data(self, data):
-        f = StringIO(data)
+        f = BytesIO(data)
         char_count = read_uint16(f)
         self.kerning = []
         for i in range(char_count):
-            value = unpack('b', f.read(1))[0]
+            value = unpack(b'b', f.read(1))[0]
             self.kerning.append(value)
     def read_property_value(self, code, raw_data):
         if code == 0x3B:
